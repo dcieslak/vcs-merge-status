@@ -1,0 +1,82 @@
+#!/bin/bash
+
+test "$@" || {
+    echo "usage:"
+    echo "1) switch to destination branch (i.e.: git checkout master)"
+    echo "2) $0 source-revision-tange (i.e.: $0 2.0.3-base..2.0.3)"
+    echo ""
+    echo "no changes are automatically submitted to your destination branch, only report is prepared"
+    echo "http://aplikacja.info - software quality solutions"
+    exit 1
+}
+
+git log --pretty=format:"%h %an %s" --reverse $@ | mawk '
+function get_comment (line) {
+    sub(/ *\(cherry picked from commit.*/, "", line)
+    sub(/ Conflicts:$/, "", line)
+    return substr(line, 9)
+}
+BEGIN {
+    system("git rebase --abort >/dev/null 2>&1")
+    system("git reset --hard >/dev/null 2>&1")
+
+    CMD="git log --pretty=format:\"%h %an %s\""
+    while (CMD | getline result > 0) {
+        history[substr(result, 0, 7)] = 1
+        comment = get_comment(result)
+        comments[comment] = 1
+    }
+    close(CMD)
+}
+{
+    CID=$0
+    gsub(/"/, " ", CID)
+
+    CL=$3
+
+    if (CL in revhistory) {
+        # already merged in opposite direction
+        # print ". " CID
+        PREVIOUSLY_MERGED ++
+        next
+    }
+
+    sub(/ *\(cherry picked from commit.*/, "")
+    comment = get_comment($0)
+    if (comment in comments) {
+        # print ". " CID
+        PREVIOUSLY_MERGED ++
+        next
+    }
+
+    CMD="git cherry-pick -x " $1 " 2>&1"
+    buf = ""
+    while (CMD | getline result > 0) {
+        buf = buf result
+    }
+    close(CMD)
+
+    if (buf ~ /files? changed/) {
+        # Just merged
+        print "+ " CID
+        JUST_MERGED ++
+    }
+    else if ((buf ~ /Automatic cherry-pick failed/) || (buf ~ /could not apply/)) {
+        # Conflict, skip
+        print "C " CID
+        system("git reset --hard >/dev/null 2>&1")
+        CONFLICT ++
+    }
+    else {
+        # Already merged
+        # print ". " CID
+        PREVIOUSLY_MERGED ++
+    }
+
+}
+END {
+    print "already merged: " PREVIOUSLY_MERGED
+    print "to be merged (+): " JUST_MERGED
+    print "to be merged, but with conflict (C): " CONFLICT
+}
+'
