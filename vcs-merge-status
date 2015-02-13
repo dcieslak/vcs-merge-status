@@ -1,6 +1,6 @@
 #!/bin/bash
 
-test "$@" || {
+test "$1" || {
     echo "usage:"
     echo "1) switch to destination branch (i.e.: git checkout master)"
     echo "2) $0 source-revision-tange (i.e.: $0 2.0.3-base..2.0.3)"
